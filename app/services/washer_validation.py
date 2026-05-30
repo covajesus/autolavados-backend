@@ -10,7 +10,7 @@ class WasherValidationError(Exception):
 
 
 def resolve_washer_id(db: Session, washer_id: int | None) -> int | None:
-    """washer_id debe ser users.id con rol Lavador (rol_id = 1)."""
+    """washer_id debe ser users.id con rol Lavador (rol_id = 4)."""
     if washer_id is None:
         return None
     row = db.get(User, washer_id)
