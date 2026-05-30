@@ -9,12 +9,12 @@ router = APIRouter(prefix="/roles", tags=["rols"])
 
 @router.get("", response_model=RolListResponse)
 def list_roles(service: RolServiceDep, current_user: CurrentUserDep) -> RolListResponse:
-    return RolListResponse(items=service.list_all(current_user))
+    return RolListResponse(items=service.list_all())
 
 
 @router.get("/{rol_id}", response_model=RolItemResponse, responses={404: {"model": ErrorResponse}})
 def get_role(rol_id: int, service: RolServiceDep, current_user: CurrentUserDep) -> RolItemResponse:
     try:
-        return RolItemResponse(item=service.get_by_id(rol_id, current_user))
+        return RolItemResponse(item=service.get_by_id(rol_id))
     except RolNotFoundError as exc:
         raise HTTPException(status_code=404, detail="No encontrado") from exc

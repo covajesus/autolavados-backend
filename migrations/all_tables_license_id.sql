@@ -1,7 +1,7 @@
 -- Agrega license_id (cliente SaaS) a todas las tablas de negocio.
 -- Tablas: licenses (omitida), users, branch_offices, tickets, statuses, raffles,
 --   raffles_numbers, brands, clients, car_types, sliders, services, customers,
---   configurations, rols, branch_offices_washers, branch_offices_managers,
+--   configurations, branch_offices_washers, branch_offices_managers,
 --   expenses, branch_collections, manager_cash_closures,
 --   tickets_branch_offices_services, washer_daily_groups,
 --   washer_daily_group_members, washer_pay_settlements
@@ -67,10 +67,6 @@ ALTER TABLE customers
 ALTER TABLE configurations
     ADD COLUMN license_id INT NULL AFTER id,
     ADD KEY idx_configurations_license_id (license_id);
-
-ALTER TABLE rols
-    ADD COLUMN license_id INT NULL AFTER id,
-    ADD KEY idx_rols_license_id (license_id);
 
 ALTER TABLE branch_offices_washers
     ADD COLUMN license_id INT NULL AFTER id,
