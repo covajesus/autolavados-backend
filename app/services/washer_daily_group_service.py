@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.datetime_utils import business_now, business_today
 from app.core.license_helpers import license_id_from_branch
 from app.core.license_scope import (
+    apply_license_scope,
     assert_row_license,
     effective_license_id_for_write,
     license_scope_for_user,
@@ -312,19 +313,26 @@ class WasherDailyGroupService:
             member.deleted_date = now
         self.db.commit()
 
-    def _active_washer_ids_for_branch(self, branch_office_id: int) -> list[int]:
+    def _active_washer_ids_for_branch(
+        self,
+        branch_office_id: int,
+        user: UserPublic | None = None,
+    ) -> list[int]:
         branch_washer_ids = self._branch_washers.list_washer_ids_for_branch(branch_office_id)
         if not branch_washer_ids:
             return []
-        rows = self.db.scalars(
+        stmt = (
             select(User)
             .where(
                 User.id.in_(branch_washer_ids),
                 User.rol_id == WASHER_ROL_ID,
                 User.deleted_date.is_(None),
             )
-            .order_by(User.full_name.asc(), User.id.asc()),
-        ).all()
+            .order_by(User.full_name.asc(), User.id.asc())
+        )
+        if user is not None:
+            stmt = apply_license_scope(stmt, User, license_scope_for_user(user))
+        rows = self.db.scalars(stmt).all()
         return [
             row.id
             for row in rows
@@ -348,7 +356,7 @@ class WasherDailyGroupService:
             branch_office_id=branch_office_id,
             group_date=day,
         )
-        active_washer_ids = self._active_washer_ids_for_branch(branch_office_id)
+        active_washer_ids = self._active_washer_ids_for_branch(branch_office_id, user)
         washers = [
             TicketWasherOptionWasher(
                 id=str(washer_id),

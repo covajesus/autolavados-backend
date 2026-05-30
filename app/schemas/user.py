@@ -73,6 +73,7 @@ class UserPublic(BaseModel):
     fullName: str
     email: str
     role: UserRole
+    roleId: int | None = Field(default=None, ge=1)
     roleLabel: str
     licenseId: int | None = Field(default=None, ge=1)
     branchOfficeId: int | None = Field(default=None, ge=1)

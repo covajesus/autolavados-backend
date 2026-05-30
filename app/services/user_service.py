@@ -17,6 +17,7 @@ from app.core.license_scope import (
 from app.core.roles import (
     ADMIN_ROL_ID,
     MANAGER_ROL_ID,
+    SUPER_ADMIN_ROL_ID,
     WASHER_ROL_ID,
     role_from_id,
     role_id_from_role,
@@ -111,6 +112,7 @@ class UserService:
             fullName=row.full_name,
             email=row.email,
             role=role_from_id(row.rol_id),
+            roleId=row.rol_id,
             roleLabel=rol_label,
             licenseId=row.license_id,
             branchOfficeId=branch_office_id,
@@ -120,7 +122,8 @@ class UserService:
             dailyGoalPercentage=daily_goal_percentage,
             statusId=str(row.status_id) if row.status_id is not None else None,
             active=active_from_status_id(row.status_id),
-            mustChangePassword=bool(row.must_change_password),
+            mustChangePassword=bool(row.must_change_password)
+            and row.rol_id != SUPER_ADMIN_ROL_ID,
         )
 
     @staticmethod

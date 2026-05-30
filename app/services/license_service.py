@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.datetime_utils import business_now
 from app.core.license_scope import license_scope_for_user
+from app.core.roles import SUPER_ADMIN_ROL_ID
 from app.models.license import License
 from app.schemas.license import LicenseCreate, LicensePublic, LicenseUpdate
 from app.schemas.user import UserPublic
@@ -59,7 +60,15 @@ class LicenseService:
             stmt = stmt.where(License.id != except_id)
         return self.db.scalars(stmt).first()
 
+    @staticmethod
+    def _is_super_admin(user: UserPublic) -> bool:
+        return user.roleId == SUPER_ADMIN_ROL_ID
+
     def list_all(self, user: UserPublic) -> list[LicensePublic]:
+        if self._is_super_admin(user):
+            stmt = self._active_filter(select(License)).order_by(License.license_client_name)
+            return [self.to_public(row) for row in self.db.scalars(stmt).all()]
+
         stmt = self._active_filter(select(License)).order_by(License.license_client_name)
         scope = license_scope_for_user(user)
         if scope == 0:
@@ -69,7 +78,7 @@ class LicenseService:
         return [self.to_public(row) for row in self.db.scalars(stmt).all()]
 
     def get_by_id(self, license_id: int, user: UserPublic | None = None) -> LicensePublic:
-        if user is not None:
+        if user is not None and not self._is_super_admin(user):
             scope = license_scope_for_user(user)
             if scope == 0 or (scope is not None and scope != license_id):
                 raise LicenseNotFoundError()
@@ -80,7 +89,7 @@ class LicenseService:
         return self.to_public(row)
 
     def create(self, data: LicenseCreate, user: UserPublic) -> LicensePublic:
-        if license_scope_for_user(user) is not None:
+        if not self._is_super_admin(user):
             raise LicenseValidationError("No autorizado")
         name = data.license_client_name.strip()
         if not name:
@@ -104,8 +113,7 @@ class LicenseService:
         return self.to_public(row)
 
     def update(self, license_id: int, data: LicenseUpdate, user: UserPublic) -> LicensePublic:
-        scope = license_scope_for_user(user)
-        if scope == 0 or (scope is not None and scope != license_id):
+        if not self._is_super_admin(user):
             raise LicenseNotFoundError()
         row = self.db.get(License, license_id)
         if row is None or not row.is_active:
@@ -133,8 +141,7 @@ class LicenseService:
         return self.to_public(row)
 
     def delete(self, license_id: int, user: UserPublic) -> None:
-        scope = license_scope_for_user(user)
-        if scope == 0 or (scope is not None and scope != license_id):
+        if not self._is_super_admin(user):
             raise LicenseNotFoundError()
         row = self.db.get(License, license_id)
         if row is None or not row.is_active:
