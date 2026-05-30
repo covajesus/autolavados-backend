@@ -14,7 +14,13 @@ from app.core.license_scope import (
     license_is_usable,
     license_scope_for_user,
 )
-from app.core.roles import MANAGER_ROL_ID, WASHER_ROL_ID, role_from_id, role_id_from_role
+from app.core.roles import (
+    ADMIN_ROL_ID,
+    MANAGER_ROL_ID,
+    WASHER_ROL_ID,
+    role_from_id,
+    role_id_from_role,
+)
 from app.core.security import hash_password, verify_password
 from app.core.user_status import (
     STATUS_ABIERTO_ID,
@@ -193,7 +199,7 @@ class UserService:
         settings = get_settings()
         now = self._now()
         row = User(
-            rol_id=1,
+            rol_id=ADMIN_ROL_ID,
             status_id=STATUS_ABIERTO_ID,
             full_name="Administrador",
             email=self.normalize_email(settings.default_admin_email),

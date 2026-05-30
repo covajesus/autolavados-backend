@@ -1,4 +1,4 @@
--- Cierre de caja diario por encargado (rol 2).
+-- Cierre de caja diario por encargado (rol 3).
 -- status_id: 0 = caja abierta, 1 = caja cerrada (ya vio ganancias ese día).
 
 CREATE TABLE IF NOT EXISTS manager_cash_closures (

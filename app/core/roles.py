@@ -3,17 +3,18 @@ from typing import Literal
 UserRole = Literal["admin", "manager", "washer"]
 
 ROLE_FROM_ID: dict[int, UserRole] = {
-    1: "admin",
-    2: "manager",
-    3: "washer",
+    1: "washer",
+    2: "admin",
+    3: "manager",
 }
 
 ID_FROM_ROLE: dict[UserRole, int] = {
-    "admin": 1,
-    "manager": 2,
-    "washer": 3,
+    "admin": 2,
+    "manager": 3,
+    "washer": 1,
 }
 
+ADMIN_ROL_ID: int = ID_FROM_ROLE["admin"]
 WASHER_ROL_ID: int = ID_FROM_ROLE["washer"]
 MANAGER_ROL_ID: int = ID_FROM_ROLE["manager"]
 
