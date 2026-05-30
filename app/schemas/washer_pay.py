@@ -73,4 +73,5 @@ class WasherPayStatusResponse(BaseModel):
     washer_id: str
     branch_office_id: str
     date: str
+    licenseId: int | None = Field(default=None, ge=1)
     payment_status: WasherPayPaymentStatus

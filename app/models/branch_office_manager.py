@@ -10,6 +10,7 @@ class BranchOfficeManager(Base):
     __tablename__ = "branch_offices_managers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     branch_office_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     manager_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

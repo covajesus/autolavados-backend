@@ -10,6 +10,7 @@ class TicketBranchOfficeService(Base):
     __tablename__ = "tickets_branch_offices_services"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ticket_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     service_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     washer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

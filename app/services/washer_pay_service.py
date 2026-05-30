@@ -11,6 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.pricing import TICKET_IVA_GROSS_FACTOR, round_money
+from app.core.license_helpers import license_id_from_branch
+from app.core.license_scope import assert_row_license, license_scope_for_user
 from app.models.branch_office import BranchOffice
 from app.models.service import Service
 from app.models.ticket import Ticket
@@ -142,6 +144,11 @@ class WasherPayService:
         branch = self.db.get(BranchOffice, branch_office_id)
         if branch is None or not branch.is_active:
             raise WasherPayValidationError("La sucursal no existe")
+        assert_row_license(
+            branch,
+            license_scope_for_user(user),
+            not_found_exc=WasherPayValidationError,
+        )
         return branch
 
     def _applied_percentage_raw(
@@ -243,6 +250,7 @@ class WasherPayService:
 
         is_paid = payment_status == "paid"
         now = business_now()
+        license_id = license_id_from_branch(self.db, branch_office_id)
         row = self.db.scalars(
             select(WasherPaySettlement).where(
                 WasherPaySettlement.branch_office_id == branch_office_id,
@@ -257,12 +265,15 @@ class WasherPayService:
                     washer_id=washer_id,
                     pay_date=day,
                     is_paid=is_paid,
+                    license_id=license_id,
                     added_date=now,
                     updated_date=now,
                 ),
             )
         else:
             row.is_paid = is_paid
+            if row.license_id is None:
+                row.license_id = license_id
             row.updated_date = now
         self.db.commit()
 
@@ -270,6 +281,7 @@ class WasherPayService:
             washer_id=str(washer_id),
             branch_office_id=str(branch_office_id),
             date=day.isoformat(),
+            licenseId=license_id if row is None else row.license_id,
             payment_status=payment_status,
         )
 

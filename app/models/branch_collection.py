@@ -10,6 +10,7 @@ class BranchCollection(Base):
     __tablename__ = "branch_collections"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     branch_office_id: Mapped[int] = mapped_column(Integer, nullable=False)
     collection_date: Mapped[date] = mapped_column(Date, nullable=False)
     gross_amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

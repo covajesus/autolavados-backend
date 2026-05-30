@@ -8,6 +8,7 @@ class Configuration(Base):
     __tablename__ = "configurations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     phone: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     email: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     address: Mapped[str] = mapped_column(String(255), nullable=False, default="")

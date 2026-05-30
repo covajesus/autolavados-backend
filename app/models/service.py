@@ -10,6 +10,7 @@ class Service(Base):
     __tablename__ = "services"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     service: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

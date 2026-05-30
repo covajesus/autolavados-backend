@@ -8,6 +8,12 @@ from app.core.datetime_utils import business_local_date, business_now, business_
 
 from app.core.pricing import round_money, split_mixed_payment_totals, ticket_totals_from_subtotal
 from app.core.ticket_total import parse_ticket_total, sync_ticket_total
+from app.core.license_scope import (
+    apply_license_scope,
+    assert_row_license,
+    effective_license_id_for_write,
+    license_scope_for_user,
+)
 from app.models.branch_office import BranchOffice
 from app.models.customer import Customer
 from app.models.status import Status
@@ -30,6 +36,7 @@ from app.schemas.user import UserPublic
 from app.services.raffle_service import RaffleService, RaffleValidationError
 from app.services.collection_service import CollectionService, empty_earnings_bucket
 from app.services.ticket_line_service import TicketLineService, TicketLineValidationError
+from app.services.license_service import LicenseNotFoundError, LicenseService
 from app.core.branch_scope import branch_scope_for_user
 
 
@@ -57,6 +64,7 @@ class TicketService:
         self.db = db
         self._lines = TicketLineService(db)
         self._raffles = RaffleService(db)
+        self._license_service = LicenseService(db)
 
     def _washer_groups_service(self):
         from app.services.washer_daily_group_service import WasherDailyGroupService
@@ -78,10 +86,42 @@ class TicketService:
     def _now() -> datetime:
         return business_now()
 
+    def _validate_license_id(self, license_id_raw: int) -> int:
+        if license_id_raw < 1:
+            raise TicketValidationError("La licencia no es válida")
+        try:
+            self._license_service.get_by_id(license_id_raw)
+        except LicenseNotFoundError as exc:
+            raise TicketValidationError("La licencia no existe") from exc
+        return license_id_raw
+
+    def _resolve_license_id_for_create(
+        self,
+        data: TicketCreate,
+        user: UserPublic | None,
+    ) -> int | None:
+        if user is not None:
+            return effective_license_id_for_write(
+                self.db,
+                user,
+                data.licenseId,
+                error_factory=TicketValidationError,
+            )
+        if data.licenseId is not None:
+            return self._validate_license_id(data.licenseId)
+        if user is not None and user.licenseId is not None:
+            return user.licenseId
+        if user is not None and user.branchOfficeId is not None:
+            branch = self.db.get(BranchOffice, user.branchOfficeId)
+            if branch is not None and branch.license_id is not None:
+                return branch.license_id
+        return None
+
     def to_public(self, row: Ticket) -> TicketPublic:
         return TicketPublic(
             id=str(row.id),
             customer_id=str(row.customer_id) if row.customer_id else None,
+            licenseId=row.license_id,
             car_type_id=str(row.car_type_id) if row.car_type_id else None,
             license_plate_id=row.license_plate_id,
             photo_url=row.photo_url,
@@ -250,6 +290,7 @@ class TicketService:
 
     def _list_stmt_for_user(self, user: UserPublic):
         stmt = self._active_filter(select(Ticket)).order_by(Ticket.added_date.desc())
+        stmt = apply_license_scope(stmt, Ticket, license_scope_for_user(user))
         branch_scope = self._branch_scope_for_user(user)
         if branch_scope is None:
             return stmt
@@ -302,6 +343,7 @@ class TicketService:
         row = self.db.get(Ticket, ticket_id)
         if row is None or not row.is_active:
             raise TicketNotFoundError()
+        assert_row_license(row, license_scope_for_user(user), not_found_exc=TicketNotFoundError)
         branch_scope = self._branch_scope_for_user(user)
         if branch_scope is None:
             return row
@@ -452,6 +494,7 @@ class TicketService:
             id=str(row.id),
             folio=f"T-{row.id}",
             branchId=self._branch_id_for_ticket(row.id),
+            licenseId=row.license_id,
             vehicleTypeId=str(row.car_type_id or ""),
             licensePlate=row.license_plate_id or "",
             total=pricing["total"],
@@ -542,6 +585,11 @@ class TicketService:
             branch = self.db.get(BranchOffice, branch_office_id)
             if branch is None or not branch.is_active:
                 raise TicketValidationError("Branch not found")
+            assert_row_license(
+                branch,
+                license_scope_for_user(user),
+                not_found_exc=TicketValidationError,
+            )
 
         buckets: dict[str, dict[str, int]] = defaultdict(empty_earnings_bucket)
 
@@ -594,6 +642,11 @@ class TicketService:
             branch = self.db.get(BranchOffice, filter_branch_id)
             if branch is None or not branch.is_active:
                 raise TicketValidationError("Branch not found")
+            assert_row_license(
+                branch,
+                license_scope_for_user(user),
+                not_found_exc=TicketValidationError,
+            )
 
         buckets: dict[int, dict[str, int]] = defaultdict(
             lambda: {"ticket_count": 0, "subtotal": 0, "iva": 0, "total": 0},
@@ -620,6 +673,7 @@ class TicketService:
         CollectionService(self.db).merge_into_branch_buckets(
             buckets,
             branch_office_id=filter_branch_id,
+            user=user,
         )
 
         items: list[BranchEarningsItem] = []
@@ -671,10 +725,15 @@ class TicketService:
             branch = self.db.get(BranchOffice, branch_office_id)
             if branch is None or not branch.is_active:
                 raise TicketValidationError("Branch not found")
+            assert_row_license(
+                branch,
+                license_scope_for_user(user),
+                not_found_exc=TicketValidationError,
+            )
             branch_name = branch.branch_office
 
         buckets = self.ticket_earnings_date_buckets(user, branch_office_id)
-        CollectionService(self.db).merge_into_date_buckets(buckets, branch_office_id)
+        CollectionService(self.db).merge_into_date_buckets(buckets, branch_office_id, user)
 
         date_items: list[BranchEarningsByDateItem] = []
         for day_key, totals in buckets.items():
@@ -719,14 +778,15 @@ class TicketService:
         row = self._get_visible_ticket(ticket_id, user)
         return self.to_public(row)
 
-    def create(self, data: TicketCreate) -> TicketCreateResponse:
+    def create(self, data: TicketCreate, user: UserPublic | None = None) -> TicketCreateResponse:
         """Crear ticket sin cobro: el pago se confirma después (checkout / PayTicket)."""
         if data.washer_id is not None and data.washer_daily_group_id is not None:
             raise TicketValidationError("Seleccione un lavador o un grupo, no ambos")
         if data.washer_daily_group_id is not None:
             self._validate_ticket_group(data.washer_daily_group_id)
 
-        active_raffle = self._raffles.get_current_active_raffle()
+        license_id = self._resolve_license_id_for_create(data, user)
+        active_raffle = self._raffles.get_current_active_raffle(license_id=license_id)
         if active_raffle is not None and not data.customer_id:
             raise TicketValidationError(
                 "Hay una rifa activa: registre o seleccione un cliente para participar",
@@ -735,6 +795,7 @@ class TicketService:
         now = self._now()
         row = Ticket(
             customer_id=data.customer_id,
+            license_id=license_id,
             car_type_id=data.car_type_id,
             license_plate_id=(data.license_plate_id or "").strip() or None,
             photo_url=(data.photo_url or "").strip() or None,
@@ -823,7 +884,7 @@ class TicketService:
         if row.payment_type_id in PAID_PAYMENT_TYPE_IDS:
             raise TicketValidationError("Este ticket ya fue cobrado")
 
-        active_raffle = self._raffles.get_current_active_raffle()
+        active_raffle = self._raffles.get_current_active_raffle(license_id=row.license_id)
         if active_raffle is not None and not row.customer_id:
             raise TicketValidationError(
                 "Hay una rifa activa: el ticket debe tener un cliente registrado",

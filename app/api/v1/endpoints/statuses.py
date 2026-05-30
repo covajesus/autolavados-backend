@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import StatusServiceDep
+from app.api.deps import CurrentUserDep, StatusServiceDep
 from app.schemas.status import (
     ErrorResponse,
     StatusCreate,
@@ -19,8 +19,8 @@ router = APIRouter(prefix="/statuses", tags=["statuses"])
     response_model=StatusListResponse,
     responses={401: {"model": ErrorResponse}},
 )
-def list_statuses(service: StatusServiceDep) -> StatusListResponse:
-    return StatusListResponse(items=service.list_all())
+def list_statuses(service: StatusServiceDep, current_user: CurrentUserDep) -> StatusListResponse:
+    return StatusListResponse(items=service.list_all(current_user))
 
 
 @router.post(
@@ -35,9 +35,10 @@ def list_statuses(service: StatusServiceDep) -> StatusListResponse:
 def create_status(
     body: StatusCreate,
     service: StatusServiceDep,
+    current_user: CurrentUserDep,
 ) -> StatusItemResponse:
     try:
-        item = service.create(body)
+        item = service.create(body, current_user)
     except StatusValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return StatusItemResponse(item=item)
@@ -54,9 +55,10 @@ def create_status(
 def get_status(
     status_id: int,
     service: StatusServiceDep,
+    current_user: CurrentUserDep,
 ) -> StatusItemResponse:
     try:
-        item = service.get_by_id(status_id)
+        item = service.get_by_id(status_id, current_user)
     except StatusNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -78,9 +80,10 @@ def update_status(
     status_id: int,
     body: StatusUpdate,
     service: StatusServiceDep,
+    current_user: CurrentUserDep,
 ) -> StatusItemResponse:
     try:
-        item = service.update(status_id, body)
+        item = service.update(status_id, body, current_user)
     except StatusNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -102,9 +105,10 @@ def update_status(
 def delete_status(
     status_id: int,
     service: StatusServiceDep,
+    current_user: CurrentUserDep,
 ) -> StatusDeleteResponse:
     try:
-        service.delete(status_id)
+        service.delete(status_id, current_user)
     except StatusNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

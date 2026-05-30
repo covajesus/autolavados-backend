@@ -11,6 +11,7 @@ class Status(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     status: Mapped[str] = mapped_column(String(255), nullable=False)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     deleted_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

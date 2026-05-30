@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.branch_scope import branch_scope_for_user
 from app.core.datetime_utils import business_today
+from app.core.license_scope import apply_license_scope, license_scope_for_user
 from app.models.branch_office import BranchOffice
 from app.schemas.eerr import EerrAccountLine, EerrDetailItem, EerrMonthResponse
 from app.services.collection_service import empty_earnings_bucket
@@ -72,7 +73,12 @@ class EerrService:
         self,
         user: UserPublic,
     ) -> dict[str, dict[str, int]]:
-        branches = self.db.scalars(select(BranchOffice).order_by(BranchOffice.id)).all()
+        stmt = apply_license_scope(
+            select(BranchOffice).order_by(BranchOffice.id),
+            BranchOffice,
+            license_scope_for_user(user),
+        )
+        branches = self.db.scalars(stmt).all()
         buckets: dict[str, dict[str, int]] = {}
 
         for branch in branches:
@@ -84,7 +90,7 @@ class EerrService:
                     _merge_date_buckets(buckets, branch_buckets)
                 elif mgmt == 2:
                     branch_buckets: dict[str, dict[str, int]] = {}
-                    self._collections.merge_into_date_buckets(branch_buckets, branch_id)
+                    self._collections.merge_into_date_buckets(branch_buckets, branch_id, user)
                     _merge_date_buckets(buckets, branch_buckets)
             except TicketValidationError as exc:
                 raise EerrValidationError(str(exc)) from exc
@@ -132,7 +138,12 @@ class EerrService:
                 ),
             )
 
-        branches = self.db.scalars(select(BranchOffice).order_by(BranchOffice.id)).all()
+        branch_stmt = apply_license_scope(
+            select(BranchOffice).order_by(BranchOffice.id),
+            BranchOffice,
+            license_scope_for_user(user),
+        )
+        branches = self.db.scalars(branch_stmt).all()
         branch_ids = [int(b.id) for b in branches]
 
         washer_pay_total = 0

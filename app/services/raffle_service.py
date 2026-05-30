@@ -1,10 +1,16 @@
 import random
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.datetime_utils import datetime_to_iso, business_now
+from app.core.license_scope import (
+    apply_license_scope,
+    assert_row_license,
+    effective_license_id_for_write,
+    license_scope_for_user,
+)
 from app.models.raffle import Raffle
 from app.models.raffle_number import RaffleNumber
 from app.schemas.raffle import (
@@ -15,6 +21,7 @@ from app.schemas.raffle import (
     RafflePublic,
     RaffleUpdate,
 )
+from app.schemas.user import UserPublic
 
 
 class RaffleNotFoundError(Exception):
@@ -67,6 +74,7 @@ class RaffleService:
         return RafflePublic(
             id=str(row.id),
             raffle=row.raffle or "",
+            licenseId=row.license_id,
             start_date=datetime_to_iso(row.start_date),
             end_date=datetime_to_iso(row.end_date),
             added_date=datetime_to_iso(row.added_date),
@@ -87,6 +95,7 @@ class RaffleService:
         return RaffleNumberPublic(
             id=str(row.id),
             raffle_id=str(row.raffle_id or ""),
+            licenseId=row.license_id,
             customer_id=str(row.customer_id) if row.customer_id is not None else None,
             ticket_id=str(row.ticket_id) if row.ticket_id is not None else None,
             number=int(row.number or 0),
@@ -108,10 +117,16 @@ class RaffleService:
             raise RaffleNotFoundError()
         return row
 
-    def _find_duplicate_name(self, name: str, except_id: int | None = None) -> Raffle | None:
+    def _find_duplicate_name(
+        self,
+        name: str,
+        license_id: int | None,
+        except_id: int | None = None,
+    ) -> Raffle | None:
         normalized = name.strip().lower()
         stmt = self._active_raffles(select(Raffle)).where(
             func.lower(Raffle.raffle) == normalized,
+            Raffle.license_id == license_id,
         )
         if except_id is not None:
             stmt = stmt.where(Raffle.id != except_id)
@@ -124,16 +139,20 @@ class RaffleService:
         )
         return {int(n) for n in self.db.scalars(stmt).all() if n is not None}
 
-    def get_current_active_public(self) -> RafflePublic | None:
-        row = self.get_current_active_raffle()
+    def get_current_active_public(self, license_id: int | None = None) -> RafflePublic | None:
+        row = self.get_current_active_raffle(license_id=license_id)
         if row is None:
             return None
         return self._raffle_to_public(row)
 
-    def get_current_active_raffle(self) -> Raffle | None:
+    def get_current_active_raffle(self, license_id: int | None = None) -> Raffle | None:
         """Rifa no eliminada y dentro de vigencia (inicio / fin)."""
         now = self._now()
         stmt = self._active_raffles(select(Raffle)).order_by(Raffle.id.desc())
+        if license_id is not None:
+            stmt = stmt.where(
+                or_(Raffle.license_id == license_id, Raffle.license_id.is_(None)),
+            )
         for row in self.db.scalars(stmt).all():
             if self._is_raffle_in_period(row, now):
                 return row
@@ -209,6 +228,7 @@ class RaffleService:
         chosen = self._pick_unique_number(raffle_id)
         row = RaffleNumber(
             raffle_id=raffle_id,
+            license_id=raffle.license_id,
             customer_id=customer_id,
             ticket_id=ticket_id,
             number=chosen,
@@ -226,18 +246,27 @@ class RaffleService:
             number=chosen,
         )
 
-    def list_all(self) -> list[RafflePublic]:
+    def list_all(self, user: UserPublic) -> list[RafflePublic]:
         stmt = self._active_raffles(select(Raffle)).order_by(Raffle.raffle, Raffle.id)
+        stmt = apply_license_scope(stmt, Raffle, license_scope_for_user(user))
         return [self._raffle_to_public(row) for row in self.db.scalars(stmt).all()]
 
-    def get_by_id(self, raffle_id: int) -> RafflePublic:
-        return self._raffle_to_public(self._get_active_raffle(raffle_id))
+    def get_by_id(self, raffle_id: int, user: UserPublic) -> RafflePublic:
+        row = self._get_active_raffle(raffle_id)
+        assert_row_license(row, license_scope_for_user(user), not_found_exc=RaffleNotFoundError)
+        return self._raffle_to_public(row)
 
-    def create(self, data: RaffleCreate) -> RafflePublic:
+    def create(self, data: RaffleCreate, user: UserPublic) -> RafflePublic:
         name = data.raffle.strip()
         if not name:
             raise RaffleValidationError("El nombre del sorteo es obligatorio")
-        if self._find_duplicate_name(name):
+        license_id = effective_license_id_for_write(
+            self.db,
+            user,
+            data.licenseId,
+            error_factory=RaffleValidationError,
+        )
+        if self._find_duplicate_name(name, license_id):
             raise RaffleValidationError("Ya existe un sorteo con ese nombre")
 
         start = self._parse_date_bound(
@@ -254,6 +283,7 @@ class RaffleService:
         now = self._now()
         row = Raffle(
             raffle=name,
+            license_id=license_id,
             start_date=start,
             end_date=end,
             added_date=now,
@@ -265,17 +295,28 @@ class RaffleService:
         self.db.refresh(row)
         return self._raffle_to_public(row)
 
-    def update(self, raffle_id: int, data: RaffleUpdate) -> RafflePublic:
+    def update(self, raffle_id: int, data: RaffleUpdate, user: UserPublic) -> RafflePublic:
         row = self._get_active_raffle(raffle_id)
+        scope = license_scope_for_user(user)
+        assert_row_license(row, scope, not_found_exc=RaffleNotFoundError)
         patch = data.model_dump(exclude_unset=True)
 
         if "raffle" in patch and patch["raffle"] is not None:
             name = patch["raffle"].strip()
             if not name:
                 raise RaffleValidationError("El nombre del sorteo no puede quedar vacío")
-            if self._find_duplicate_name(name, except_id=raffle_id):
-                raise RaffleValidationError("Ya existe un sorteo con ese nombre")
             row.raffle = name
+
+        if "licenseId" in patch or scope is not None:
+            row.license_id = effective_license_id_for_write(
+                self.db,
+                user,
+                patch.get("licenseId"),
+                error_factory=RaffleValidationError,
+            )
+
+        if row.raffle and self._find_duplicate_name(row.raffle, row.license_id, except_id=raffle_id):
+            raise RaffleValidationError("Ya existe un sorteo con ese nombre")
 
         start = row.start_date
         end = row.end_date
@@ -300,25 +341,30 @@ class RaffleService:
         self.db.refresh(row)
         return self._raffle_to_public(row)
 
-    def delete(self, raffle_id: int) -> None:
+    def delete(self, raffle_id: int, user: UserPublic) -> None:
         row = self._get_active_raffle(raffle_id)
+        assert_row_license(row, license_scope_for_user(user), not_found_exc=RaffleNotFoundError)
         now = self._now()
         row.deleted_date = now
         row.updated_date = now
         self.db.commit()
 
-    def list_numbers(self, raffle_id: int) -> list[RaffleNumberPublic]:
-        self._get_active_raffle(raffle_id)
+    def list_numbers(self, raffle_id: int, user: UserPublic) -> list[RaffleNumberPublic]:
+        raffle = self._get_active_raffle(raffle_id)
+        scope = license_scope_for_user(user)
+        assert_row_license(raffle, scope, not_found_exc=RaffleNotFoundError)
         stmt = (
             self._active_numbers(select(RaffleNumber))
             .where(RaffleNumber.raffle_id == raffle_id)
             .order_by(RaffleNumber.number, RaffleNumber.id)
         )
+        stmt = apply_license_scope(stmt, RaffleNumber, scope)
         return [self._number_to_public(row) for row in self.db.scalars(stmt).all()]
 
     def draw_number(
         self,
         raffle_id: int,
+        user: UserPublic,
         *,
         min_number: int = DEFAULT_MIN_NUMBER,
         max_number: int = DEFAULT_MAX_NUMBER,
@@ -326,7 +372,8 @@ class RaffleService:
         if min_number < 0 or max_number < min_number:
             raise RaffleValidationError("Rango de números inválido")
 
-        self._get_active_raffle(raffle_id)
+        raffle = self._get_active_raffle(raffle_id)
+        assert_row_license(raffle, license_scope_for_user(user), not_found_exc=RaffleNotFoundError)
         chosen = self._pick_unique_number(
             raffle_id,
             min_number=min_number,
@@ -335,6 +382,7 @@ class RaffleService:
         now = self._now()
         row = RaffleNumber(
             raffle_id=raffle_id,
+            license_id=raffle.license_id,
             number=chosen,
             added_date=now,
             updated_date=now,

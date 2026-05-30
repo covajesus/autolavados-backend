@@ -5,6 +5,13 @@ from sqlalchemy.orm import Session
 
 from app.core.branch_scope import branch_scope_for_user
 from app.core.datetime_utils import business_now
+from app.core.license_helpers import license_id_from_branch
+from app.core.license_scope import (
+    apply_license_scope,
+    assert_row_license,
+    effective_license_id_for_write,
+    license_scope_for_user,
+)
 from app.models.branch_office import BranchOffice
 from app.models.expense import Expense
 from app.schemas.expense import ExpenseCreate, ExpensePublic, ExpenseUpdate
@@ -94,6 +101,7 @@ class ExpenseService:
             expense_date=row.expense_date,
             branchOfficeId=branch_id,
             branchOfficeName=self._branch_name(branch_id),
+            licenseId=row.license_id,
             photo_url=row.photo_url,
             added_date=row.added_date,
             updated_date=row.updated_date,
@@ -121,21 +129,26 @@ class ExpenseService:
             return None
         return text
 
-    def _validate_branch_exists(self, branch_office_id: int) -> None:
+    def _validate_branch_exists(self, branch_office_id: int, user: UserPublic) -> None:
         branch = self.db.get(BranchOffice, branch_office_id)
         if branch is None or not branch.is_active:
             raise ExpenseValidationError("La sucursal no existe")
+        assert_row_license(
+            branch,
+            license_scope_for_user(user),
+            not_found_exc=ExpenseValidationError,
+        )
 
     def _resolve_branch_for_create(self, user: UserPublic, requested: int | None) -> int:
         scope = branch_scope_for_user(user)
         if scope is None:
             if requested is None or requested < 1:
                 raise ExpenseValidationError("Seleccione la sucursal")
-            self._validate_branch_exists(requested)
+            self._validate_branch_exists(requested, user)
             return requested
         if scope == 0:
             raise ExpenseValidationError("Su cuenta no tiene sucursal asignada")
-        self._validate_branch_exists(scope)
+        self._validate_branch_exists(scope, user)
         return scope
 
     def _resolve_branch_for_update(
@@ -151,10 +164,11 @@ class ExpenseService:
             if scope == 0 or requested != scope:
                 raise ExpenseForbiddenError()
             return None
-        self._validate_branch_exists(requested)
+        self._validate_branch_exists(requested, user)
         return requested
 
     def _assert_can_access(self, user: UserPublic, row: Expense) -> None:
+        assert_row_license(row, license_scope_for_user(user), not_found_exc=ExpenseNotFoundError)
         scope = branch_scope_for_user(user)
         if scope is None:
             return
@@ -170,6 +184,7 @@ class ExpenseService:
             Expense.expense_date.desc(),
             Expense.added_date.desc(),
         )
+        stmt = apply_license_scope(stmt, Expense, license_scope_for_user(user))
         if scope is not None:
             stmt = stmt.where(Expense.branch_office_id == scope)
 
@@ -193,12 +208,19 @@ class ExpenseService:
         self._reject_admin_only_type_for_user(user, expense_type)
         photo_url = self._normalize_photo(data.photo_url)
         branch_office_id = self._resolve_branch_for_create(user, data.branchOfficeId)
+        license_id = effective_license_id_for_write(
+            self.db,
+            user,
+            data.licenseId,
+            error_factory=ExpenseValidationError,
+        ) or license_id_from_branch(self.db, branch_office_id)
         now = self._now()
         row = Expense(
             expense_type=expense_type,
             amount=int(data.amount),
             expense_date=data.expense_date,
             branch_office_id=branch_office_id,
+            license_id=license_id,
             photo_url=photo_url,
             added_date=now,
             updated_date=now,
@@ -232,6 +254,14 @@ class ExpenseService:
         branch_id = self._resolve_branch_for_update(user, row, data.branchOfficeId)
         if branch_id is not None:
             row.branch_office_id = branch_id
+
+        if data.licenseId is not None or license_scope_for_user(user) is not None:
+            row.license_id = effective_license_id_for_write(
+                self.db,
+                user,
+                data.licenseId,
+                error_factory=ExpenseValidationError,
+            )
 
         row.updated_date = self._now()
         self.db.commit()

@@ -10,6 +10,7 @@ class WasherDailyGroup(Base):
     __tablename__ = "washer_daily_groups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     branch_office_id: Mapped[int] = mapped_column(Integer, nullable=False)
     group_date: Mapped[date] = mapped_column(Date, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -26,6 +27,7 @@ class WasherDailyGroupMember(Base):
     __tablename__ = "washer_daily_group_members"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     group_id: Mapped[int] = mapped_column(Integer, nullable=False)
     washer_id: Mapped[int] = mapped_column(Integer, nullable=False)
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

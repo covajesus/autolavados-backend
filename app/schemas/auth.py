@@ -22,3 +22,13 @@ class LoginErrorResponse(BaseModel):
 
 class MeResponse(BaseModel):
     user: UserPublic
+
+
+class ChangePasswordRequest(BaseModel):
+    currentPassword: str = Field(..., min_length=1)
+    newPassword: str = Field(..., min_length=6, max_length=255)
+
+
+class ChangePasswordResponse(BaseModel):
+    ok: bool = True
+    user: UserPublic

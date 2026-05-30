@@ -25,6 +25,7 @@ class TicketServiceLineInput(BaseModel):
 
 class TicketCreate(BaseModel):
     customer_id: int | None = None
+    licenseId: int | None = Field(default=None, ge=1)
     car_type_id: int | None = None
     license_plate_id: str | None = Field(default=None, max_length=255)
     photo_url: str | None = Field(default=None, max_length=500)
@@ -44,6 +45,7 @@ class TicketUpdate(BaseModel):
     """Administrador: `gross_amount`, lavador/grupo. Gerente: solo `status_id` (p. ej. No pagado)."""
 
     customer_id: int | None = None
+    licenseId: int | None = Field(default=None, ge=1)
     car_type_id: int | None = None
     license_plate_id: str | None = Field(default=None, max_length=255)
     photo_url: str | None = Field(default=None, max_length=500)
@@ -74,6 +76,7 @@ class TicketCheckout(BaseModel):
 class TicketPublic(BaseModel):
     id: str
     customer_id: str | None = None
+    licenseId: int | None = Field(default=None, ge=1)
     car_type_id: str | None = None
     license_plate_id: str | None = None
     photo_url: str | None = None
@@ -89,6 +92,7 @@ class TicketListItem(BaseModel):
     id: str
     folio: str
     branchId: str
+    licenseId: int | None = Field(default=None, ge=1)
     vehicleTypeId: str
     licensePlate: str
     total: int

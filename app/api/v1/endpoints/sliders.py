@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import SliderServiceDep
+from app.api.deps import CurrentUserDep, SliderServiceDep
 from app.schemas.slider import (
     ErrorResponse,
     SliderCreate,
@@ -19,8 +19,8 @@ router = APIRouter(prefix="/sliders", tags=["sliders"])
     response_model=SliderListResponse,
     responses={401: {"model": ErrorResponse}},
 )
-def list_sliders(service: SliderServiceDep) -> SliderListResponse:
-    return SliderListResponse(items=service.list_all())
+def list_sliders(service: SliderServiceDep, current_user: CurrentUserDep) -> SliderListResponse:
+    return SliderListResponse(items=service.list_all(current_user))
 
 
 @router.post(
@@ -35,9 +35,10 @@ def list_sliders(service: SliderServiceDep) -> SliderListResponse:
 def create_slider(
     body: SliderCreate,
     service: SliderServiceDep,
+    current_user: CurrentUserDep,
 ) -> SliderItemResponse:
     try:
-        item = service.create(body)
+        item = service.create(body, current_user)
     except SliderValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return SliderItemResponse(item=item)
@@ -54,9 +55,10 @@ def create_slider(
 def get_slider(
     slider_id: int,
     service: SliderServiceDep,
+    current_user: CurrentUserDep,
 ) -> SliderItemResponse:
     try:
-        item = service.get_by_id(slider_id)
+        item = service.get_by_id(slider_id, current_user)
     except SliderNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -78,9 +80,10 @@ def update_slider(
     slider_id: int,
     body: SliderUpdate,
     service: SliderServiceDep,
+    current_user: CurrentUserDep,
 ) -> SliderItemResponse:
     try:
-        item = service.update(slider_id, body)
+        item = service.update(slider_id, body, current_user)
     except SliderNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -102,9 +105,10 @@ def update_slider(
 def delete_slider(
     slider_id: int,
     service: SliderServiceDep,
+    current_user: CurrentUserDep,
 ) -> SliderDeleteResponse:
     try:
-        service.delete(slider_id)
+        service.delete(slider_id, current_user)
     except SliderNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

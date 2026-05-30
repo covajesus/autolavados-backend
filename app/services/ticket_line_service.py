@@ -4,8 +4,16 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.datetime_utils import business_now, datetime_to_iso
+from app.core.license_helpers import license_id_from_branch
+from app.core.license_scope import (
+    apply_license_scope,
+    assert_row_license,
+    effective_license_id_for_write,
+    license_scope_for_user,
+)
 from app.core.pricing import round_money
 from app.models.service import Service
+from app.models.ticket import Ticket
 from app.models.ticket_branch_office_service import TicketBranchOfficeService
 from app.models.user import User
 from app.models.washer_daily_group import WasherDailyGroup
@@ -15,6 +23,7 @@ from app.schemas.ticket_branch_office_service import (
     TicketBranchOfficeServicePublic,
     TicketBranchOfficeServiceUpdate,
 )
+from app.schemas.user import UserPublic
 from app.services.washer_validation import WasherValidationError, resolve_washer_id
 
 
@@ -44,6 +53,22 @@ class TicketLineService:
             return round_money(row.total)
         return 0
 
+    def _license_id_for_ticket(self, ticket_id: int) -> int | None:
+        ticket = self.db.get(Ticket, ticket_id)
+        if ticket is not None and ticket.license_id is not None:
+            return ticket.license_id
+        from app.services.ticket_service import TicketService
+
+        branch_id = TicketService(self.db)._resolve_branch_office_id_for_ticket(ticket_id)
+        return license_id_from_branch(self.db, branch_id)
+
+    def _assert_ticket_in_scope(self, ticket_id: int, user: UserPublic) -> int | None:
+        license_id = self._license_id_for_ticket(ticket_id)
+        scope = license_scope_for_user(user)
+        if scope == 0 or (scope is not None and license_id != scope):
+            raise TicketLineNotFoundError()
+        return license_id
+
     def to_public(self, row: TicketBranchOfficeService) -> TicketBranchOfficeServicePublic:
         svc_id = row.service_id
         return TicketBranchOfficeServicePublic(
@@ -53,6 +78,7 @@ class TicketLineService:
             additional_service=(row.additional_service or "").strip() or None,
             washer_id=str(row.washer_id) if row.washer_id is not None else None,
             total=self._resolved_line_total(row),
+            licenseId=row.license_id,
             added_date=datetime_to_iso(row.added_date),
             updated_date=row.updated_date,
             deleted_date=datetime_to_iso(row.deleted_date),
@@ -297,12 +323,14 @@ class TicketLineService:
             placeholder.washer_daily_group_id = washer_daily_group_id
             placeholder.updated_date = ts
         else:
+            license_id = self._license_id_for_ticket(ticket_id)
             self.db.add(
                 TicketBranchOfficeService(
                     ticket_id=ticket_id,
                     service_id=None,
                     washer_id=resolved,
                     washer_daily_group_id=washer_daily_group_id,
+                    license_id=license_id,
                     added_date=now,
                     updated_date=ts,
                     deleted_date=None,
@@ -339,6 +367,8 @@ class TicketLineService:
                 washer_id=washer_id,
             )
 
+        license_id = self._license_id_for_ticket(ticket_id)
+
         for service_id, line_total, additional_name in items:
             additional = (additional_name or "").strip() or None
             if line_total is None:
@@ -360,6 +390,7 @@ class TicketLineService:
                         washer_id=resolved_washer,
                         washer_daily_group_id=washer_daily_group_id,
                         total=stored_total,
+                        license_id=license_id,
                         added_date=self._now(),
                         updated_date=self._timestamp_str(),
                         deleted_date=None,
@@ -382,34 +413,48 @@ class TicketLineService:
                     washer_id=resolved_washer,
                     washer_daily_group_id=washer_daily_group_id,
                     total=stored_total,
+                    license_id=license_id,
                     added_date=self._now(),
                     updated_date=self._timestamp_str(),
                     deleted_date=None,
                 ),
             )
 
-    def list_all(self, *, ticket_id: int | None = None) -> list[TicketBranchOfficeServicePublic]:
+    def list_all(
+        self,
+        user: UserPublic,
+        *,
+        ticket_id: int | None = None,
+    ) -> list[TicketBranchOfficeServicePublic]:
         stmt = self._active_filter(select(TicketBranchOfficeService))
         if ticket_id is not None:
+            self._assert_ticket_in_scope(ticket_id, user)
             stmt = stmt.where(TicketBranchOfficeService.ticket_id == ticket_id)
+        stmt = apply_license_scope(stmt, TicketBranchOfficeService, license_scope_for_user(user))
         return [self.to_public(row) for row in self.db.scalars(stmt).all()]
 
-    def get_by_id(self, line_id: int) -> TicketBranchOfficeServicePublic:
+    def get_by_id(self, line_id: int, user: UserPublic) -> TicketBranchOfficeServicePublic:
         stmt = self._active_filter(select(TicketBranchOfficeService)).where(
             TicketBranchOfficeService.id == line_id,
         )
+        stmt = apply_license_scope(stmt, TicketBranchOfficeService, license_scope_for_user(user))
         row = self.db.scalars(stmt).first()
         if row is None:
             raise TicketLineNotFoundError()
         return self.to_public(row)
 
-    def create(self, data: TicketBranchOfficeServiceCreate) -> TicketBranchOfficeServicePublic:
+    def create(
+        self,
+        data: TicketBranchOfficeServiceCreate,
+        user: UserPublic,
+    ) -> TicketBranchOfficeServicePublic:
         if data.service_id is None:
             raise TicketLineValidationError("El servicio es obligatorio")
 
         svc = self.db.get(Service, data.service_id)
         if svc is None or not svc.is_active:
             raise TicketLineValidationError("El servicio no existe")
+        assert_row_license(svc, license_scope_for_user(user), not_found_exc=TicketLineValidationError)
 
         washer_id = self._resolve_washer(
             ticket_id=data.ticket_id,
@@ -420,15 +465,23 @@ class TicketLineService:
         ts = self._timestamp_str()
         if data.ticket_id <= 0:
             raise TicketLineValidationError("El ticket no es válido")
+        ticket_license_id = self._assert_ticket_in_scope(data.ticket_id, user)
 
         if data.total is None:
             raise TicketLineValidationError("El monto del servicio es obligatorio")
         stored_total = round_money(data.total)
+        license_id = effective_license_id_for_write(
+            self.db,
+            user,
+            data.licenseId,
+            error_factory=TicketLineValidationError,
+        ) or ticket_license_id
         row = TicketBranchOfficeService(
             ticket_id=data.ticket_id,
             service_id=data.service_id,
             washer_id=washer_id,
             total=stored_total,
+            license_id=license_id,
             added_date=now,
             updated_date=ts,
             deleted_date=None,
@@ -442,18 +495,23 @@ class TicketLineService:
         self,
         line_id: int,
         data: TicketBranchOfficeServiceUpdate,
+        user: UserPublic,
     ) -> TicketBranchOfficeServicePublic:
         row = self.db.get(TicketBranchOfficeService, line_id)
         if row is None or not row.is_active:
             raise TicketLineNotFoundError()
+        scope = license_scope_for_user(user)
+        assert_row_license(row, scope, not_found_exc=TicketLineNotFoundError)
 
         if data.service_id is not None:
             svc = self.db.get(Service, data.service_id)
             if svc is None or not svc.is_active:
                 raise TicketLineValidationError("El servicio no existe")
+            assert_row_license(svc, scope, not_found_exc=TicketLineValidationError)
             row.service_id = data.service_id
 
         if data.ticket_id is not None:
+            self._assert_ticket_in_scope(data.ticket_id, user)
             row.ticket_id = data.ticket_id
 
         if data.washer_id is not None:
@@ -467,6 +525,14 @@ class TicketLineService:
 
         if data.total is not None:
             row.total = round_money(data.total)
+
+        if data.licenseId is not None or scope is not None:
+            row.license_id = effective_license_id_for_write(
+                self.db,
+                user,
+                data.licenseId,
+                error_factory=TicketLineValidationError,
+            )
 
         row.updated_date = self._timestamp_str()
         self.db.commit()
@@ -486,10 +552,11 @@ class TicketLineService:
             row.deleted_date = when
             row.updated_date = ts
 
-    def delete(self, line_id: int) -> None:
+    def delete(self, line_id: int, user: UserPublic) -> None:
         row = self.db.get(TicketBranchOfficeService, line_id)
         if row is None or not row.is_active:
             raise TicketLineNotFoundError()
+        assert_row_license(row, license_scope_for_user(user), not_found_exc=TicketLineNotFoundError)
         now = self._now()
         row.deleted_date = now
         row.updated_date = self._timestamp_str()

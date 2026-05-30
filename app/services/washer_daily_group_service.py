@@ -6,6 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.datetime_utils import business_now, business_today
+from app.core.license_helpers import license_id_from_branch
+from app.core.license_scope import (
+    assert_row_license,
+    effective_license_id_for_write,
+    license_scope_for_user,
+)
 from app.core.roles import WASHER_ROL_ID
 from app.models.branch_office import BranchOffice
 from app.models.user import User
@@ -56,6 +62,11 @@ class WasherDailyGroupService:
         branch = self.db.get(BranchOffice, branch_office_id)
         if branch is None or not branch.is_active:
             raise WasherDailyGroupValidationError("La sucursal no existe")
+        assert_row_license(
+            branch,
+            license_scope_for_user(user),
+            not_found_exc=WasherDailyGroupValidationError,
+        )
         return branch
 
     def _resolve_branch_for_user(self, user: UserPublic) -> int:
@@ -154,6 +165,7 @@ class WasherDailyGroupService:
             branch_office_id=str(group.branch_office_id),
             group_date=group.group_date.isoformat(),
             name=group.name.strip(),
+            licenseId=group.license_id,
             members=members,
         )
 
@@ -201,11 +213,18 @@ class WasherDailyGroupService:
             washer_ids=data.washer_ids,
             group_date=day,
         )
+        license_id = effective_license_id_for_write(
+            self.db,
+            user,
+            data.licenseId,
+            error_factory=WasherDailyGroupValidationError,
+        ) or license_id_from_branch(self.db, branch_office_id)
         now = self._now()
         row = WasherDailyGroup(
             branch_office_id=branch_office_id,
             group_date=day,
             name=name[:255],
+            license_id=license_id,
             added_date=now,
             updated_date=now,
             deleted_date=None,
@@ -219,6 +238,7 @@ class WasherDailyGroupService:
                 WasherDailyGroupMember(
                     group_id=row.id,
                     washer_id=washer_id,
+                    license_id=license_id,
                     added_date=now,
                     deleted_date=None,
                 ),
@@ -246,6 +266,13 @@ class WasherDailyGroupService:
             if not name:
                 raise WasherDailyGroupValidationError("Indique el nombre del grupo")
             row.name = name[:255]
+        if data.licenseId is not None or license_scope_for_user(user) is not None:
+            row.license_id = effective_license_id_for_write(
+                self.db,
+                user,
+                data.licenseId,
+                error_factory=WasherDailyGroupValidationError,
+            )
         if data.washer_ids is not None:
             self._validate_washer_ids_for_branch(
                 branch_office_id=row.branch_office_id,
@@ -261,6 +288,7 @@ class WasherDailyGroupService:
                     WasherDailyGroupMember(
                         group_id=row.id,
                         washer_id=washer_id,
+                        license_id=row.license_id,
                         added_date=now,
                         deleted_date=None,
                     ),

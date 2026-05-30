@@ -10,6 +10,7 @@ class Expense(Base):
     __tablename__ = "expenses"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expense_type: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     expense_date: Mapped[date | None] = mapped_column(Date, nullable=True)

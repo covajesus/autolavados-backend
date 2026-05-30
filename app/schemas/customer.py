@@ -8,6 +8,7 @@ class CustomerCreate(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=255)
     phone: str = Field(default="", max_length=255)
     email: str = Field(default="", max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class CustomerUpdate(BaseModel):
@@ -15,6 +16,7 @@ class CustomerUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     phone: str | None = Field(default=None, max_length=255)
     email: str | None = Field(default=None, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class CustomerPublic(BaseModel):
@@ -23,6 +25,7 @@ class CustomerPublic(BaseModel):
     full_name: str
     phone: str
     email: str
+    licenseId: int | None = Field(default=None, ge=1)
     added_date: datetime | None = None
     updated_date: datetime | None = None
     deleted_date: datetime | None = None

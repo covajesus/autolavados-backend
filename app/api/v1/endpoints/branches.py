@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import BranchOfficeServiceDep
+from app.api.deps import BranchOfficeServiceDep, CurrentUserDep
 from app.schemas.branch_office import (
     BranchOfficeCreate,
     BranchOfficeDeleteResponse,
@@ -22,8 +22,11 @@ router = APIRouter(prefix="/branches", tags=["branch_offices"])
     response_model=BranchOfficeListResponse,
     responses={401: {"model": ErrorResponse}},
 )
-def list_branches(service: BranchOfficeServiceDep) -> BranchOfficeListResponse:
-    return BranchOfficeListResponse(items=service.list_all())
+def list_branches(
+    service: BranchOfficeServiceDep,
+    current_user: CurrentUserDep,
+) -> BranchOfficeListResponse:
+    return BranchOfficeListResponse(items=service.list_all(current_user))
 
 
 @router.post(
@@ -38,9 +41,10 @@ def list_branches(service: BranchOfficeServiceDep) -> BranchOfficeListResponse:
 def create_branch(
     body: BranchOfficeCreate,
     service: BranchOfficeServiceDep,
+    current_user: CurrentUserDep,
 ) -> BranchOfficeItemResponse:
     try:
-        item = service.create(body)
+        item = service.create(body, current_user)
     except BranchOfficeValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return BranchOfficeItemResponse(item=item)
@@ -57,9 +61,10 @@ def create_branch(
 def get_branch(
     branch_id: int,
     service: BranchOfficeServiceDep,
+    current_user: CurrentUserDep,
 ) -> BranchOfficeItemResponse:
     try:
-        item = service.get_by_id(branch_id)
+        item = service.get_by_id(branch_id, current_user)
     except BranchOfficeNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -81,9 +86,10 @@ def update_branch(
     branch_id: int,
     body: BranchOfficeUpdate,
     service: BranchOfficeServiceDep,
+    current_user: CurrentUserDep,
 ) -> BranchOfficeItemResponse:
     try:
-        item = service.update(branch_id, body)
+        item = service.update(branch_id, body, current_user)
     except BranchOfficeNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -105,9 +111,10 @@ def update_branch(
 def delete_branch(
     branch_id: int,
     service: BranchOfficeServiceDep,
+    current_user: CurrentUserDep,
 ) -> BranchOfficeDeleteResponse:
     try:
-        service.delete(branch_id)
+        service.delete(branch_id, current_user)
     except BranchOfficeNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

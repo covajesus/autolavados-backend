@@ -10,6 +10,7 @@ class Client(Base):
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     clients: Mapped[str] = mapped_column(String(255), nullable=False)
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_date: Mapped[datetime | None] = mapped_column(

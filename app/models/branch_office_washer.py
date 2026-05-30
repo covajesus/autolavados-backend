@@ -10,6 +10,7 @@ class BranchOfficeWasher(Base):
     __tablename__ = "branch_offices_washers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     branch_office_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     washer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     sunday_percentage: Mapped[str | None] = mapped_column(String(255), nullable=True)

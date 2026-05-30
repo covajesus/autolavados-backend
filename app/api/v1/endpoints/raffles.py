@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
-from app.api.deps import RaffleServiceDep
+from app.api.deps import CurrentUserDep, RaffleServiceDep
+from app.core.license_scope import license_scope_for_user
 from app.schemas.raffle import (
     ErrorResponse,
     RaffleCreate,
@@ -22,8 +23,8 @@ router = APIRouter(prefix="/raffles", tags=["raffles"])
     response_model=RaffleListResponse,
     responses={401: {"model": ErrorResponse}},
 )
-def list_raffles(service: RaffleServiceDep) -> RaffleListResponse:
-    return RaffleListResponse(items=service.list_all())
+def list_raffles(service: RaffleServiceDep, current_user: CurrentUserDep) -> RaffleListResponse:
+    return RaffleListResponse(items=service.list_all(current_user))
 
 
 @router.get(
@@ -31,8 +32,14 @@ def list_raffles(service: RaffleServiceDep) -> RaffleListResponse:
     response_model=RaffleCurrentResponse,
     responses={401: {"model": ErrorResponse}},
 )
-def get_current_raffle(service: RaffleServiceDep) -> RaffleCurrentResponse:
-    return RaffleCurrentResponse(item=service.get_current_active_public())
+def get_current_raffle(
+    service: RaffleServiceDep,
+    current_user: CurrentUserDep,
+) -> RaffleCurrentResponse:
+    scope = license_scope_for_user(current_user)
+    return RaffleCurrentResponse(
+        item=None if scope == 0 else service.get_current_active_public(license_id=scope),
+    )
 
 
 @router.post(
@@ -47,9 +54,10 @@ def get_current_raffle(service: RaffleServiceDep) -> RaffleCurrentResponse:
 def create_raffle(
     body: RaffleCreate,
     service: RaffleServiceDep,
+    current_user: CurrentUserDep,
 ) -> RaffleItemResponse:
     try:
-        item = service.create(body)
+        item = service.create(body, current_user)
     except RaffleValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return RaffleItemResponse(item=item)
@@ -66,9 +74,10 @@ def create_raffle(
 def get_raffle(
     raffle_id: int,
     service: RaffleServiceDep,
+    current_user: CurrentUserDep,
 ) -> RaffleItemResponse:
     try:
-        item = service.get_by_id(raffle_id)
+        item = service.get_by_id(raffle_id, current_user)
     except RaffleNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -90,9 +99,10 @@ def update_raffle(
     raffle_id: int,
     body: RaffleUpdate,
     service: RaffleServiceDep,
+    current_user: CurrentUserDep,
 ) -> RaffleItemResponse:
     try:
-        item = service.update(raffle_id, body)
+        item = service.update(raffle_id, body, current_user)
     except RaffleNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -114,9 +124,10 @@ def update_raffle(
 def delete_raffle(
     raffle_id: int,
     service: RaffleServiceDep,
+    current_user: CurrentUserDep,
 ) -> RaffleDeleteResponse:
     try:
-        service.delete(raffle_id)
+        service.delete(raffle_id, current_user)
     except RaffleNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -136,9 +147,10 @@ def delete_raffle(
 def list_raffle_numbers(
     raffle_id: int,
     service: RaffleServiceDep,
+    current_user: CurrentUserDep,
 ) -> RaffleNumberListResponse:
     try:
-        items = service.list_numbers(raffle_id)
+        items = service.list_numbers(raffle_id, current_user)
     except RaffleNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -159,12 +171,14 @@ def list_raffle_numbers(
 def draw_raffle_number(
     raffle_id: int,
     service: RaffleServiceDep,
+    current_user: CurrentUserDep,
     min_number: int = Query(default=1, ge=0, alias="min"),
     max_number: int = Query(default=9999, ge=1, alias="max"),
 ) -> RaffleDrawResponse:
     try:
         return service.draw_number(
             raffle_id,
+            current_user,
             min_number=min_number,
             max_number=max_number,
         )

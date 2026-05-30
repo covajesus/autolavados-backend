@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.core.datetime_utils import business_now
+from app.core.license_helpers import license_id_from_branch
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -53,6 +54,7 @@ class BranchOfficeManagerService:
             raise BranchOfficeManagerValidationError("La sucursal no existe")
 
         now = self._now()
+        license_id = license_id_from_branch(self.db, branch_office_id)
         active_rows = self.db.scalars(
             self._active_filter(select(BranchOfficeManager)).where(
                 BranchOfficeManager.manager_id == manager_id,
@@ -66,6 +68,7 @@ class BranchOfficeManagerService:
             BranchOfficeManager(
                 branch_office_id=branch_office_id,
                 manager_id=manager_id,
+                license_id=license_id,
                 added_date=now,
                 updated_date=now,
                 deleted_date=None,

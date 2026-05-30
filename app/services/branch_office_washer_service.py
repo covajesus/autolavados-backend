@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from app.core.datetime_utils import business_now
+from app.core.license_helpers import license_id_from_branch
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -109,6 +110,7 @@ class BranchOfficeWasherService:
         )
 
         now = self._now()
+        license_id = license_id_from_branch(self.db, branch_office_id)
         active_rows = self.db.scalars(
             self._active_filter(select(BranchOfficeWasher)).where(
                 BranchOfficeWasher.washer_id == washer_id,
@@ -122,6 +124,7 @@ class BranchOfficeWasherService:
             BranchOfficeWasher(
                 branch_office_id=branch_office_id,
                 washer_id=washer_id,
+                license_id=license_id,
                 week_percentage=week,
                 sunday_percentage=sunday,
                 daily_goal=goal,

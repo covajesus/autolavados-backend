@@ -10,6 +10,7 @@ class Rol(Base):
     __tablename__ = "rols"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rol: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

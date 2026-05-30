@@ -4,6 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.datetime_utils import business_now, business_today
+from app.core.license_helpers import license_id_from_branch
+from app.core.license_scope import license_scope_for_user
 from app.core.roles import MANAGER_ROL_ID
 from app.models.manager_cash_closure import (
     CASH_CLOSURE_STATUS_CLOSED,
@@ -12,6 +14,7 @@ from app.models.manager_cash_closure import (
 )
 from app.schemas.cash_closure import CashClosureConfirmResponse, CashClosureTodayResponse
 from app.schemas.user import UserPublic
+from app.services.branch_office_manager_service import BranchOfficeManagerService
 
 
 class CashClosureValidationError(Exception):
@@ -21,6 +24,7 @@ class CashClosureValidationError(Exception):
 class CashClosureService:
     def __init__(self, db: Session) -> None:
         self.db = db
+        self._branch_manager = BranchOfficeManagerService(db)
 
     @staticmethod
     def _now() -> datetime:
@@ -34,6 +38,8 @@ class CashClosureService:
     def _require_manager(user: UserPublic) -> int:
         if user.role != "manager":
             raise CashClosureValidationError("Solo encargados pueden cerrar caja")
+        if license_scope_for_user(user) == 0:
+            raise CashClosureValidationError("Su cuenta no tiene licencia asignada")
         try:
             manager_id = int(user.id)
         except (TypeError, ValueError) as exc:
@@ -50,13 +56,19 @@ class CashClosureService:
             ),
         ).first()
 
+    def _license_id_for_manager(self, manager_id: int) -> int | None:
+        branch_id = self._branch_manager.get_branch_office_id_for_manager(manager_id)
+        return license_id_from_branch(self.db, branch_id)
+
     def today_status(self, user: UserPublic) -> CashClosureTodayResponse:
         manager_id = self._require_manager(user)
         today = self._today()
         row = self._get_row(manager_id, today)
+        license_id = row.license_id if row is not None else self._license_id_for_manager(manager_id)
         if row is None:
             return CashClosureTodayResponse(
                 date=today,
+                licenseId=license_id,
                 status_id=None,
                 already_closed=False,
                 needs_confirmation=True,
@@ -64,6 +76,7 @@ class CashClosureService:
         closed = int(row.status_id) == CASH_CLOSURE_STATUS_CLOSED
         return CashClosureTodayResponse(
             date=today,
+            licenseId=license_id,
             status_id=int(row.status_id),
             already_closed=closed,
             needs_confirmation=not closed,
@@ -83,18 +96,22 @@ class CashClosureService:
                 manager_id=manager_id,
                 closure_date=today,
                 status_id=CASH_CLOSURE_STATUS_CLOSED,
+                license_id=self._license_id_for_manager(manager_id),
                 added_date=now,
                 updated_date=now,
             )
             self.db.add(row)
         else:
             row.status_id = CASH_CLOSURE_STATUS_CLOSED
+            if row.license_id is None:
+                row.license_id = self._license_id_for_manager(manager_id)
             row.updated_date = now
 
         self.db.commit()
         self.db.refresh(row)
         return CashClosureConfirmResponse(
             date=today,
+            licenseId=row.license_id,
             status_id=int(row.status_id),
         )
 

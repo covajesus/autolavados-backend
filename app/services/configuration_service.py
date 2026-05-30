@@ -2,6 +2,7 @@ import re
 from datetime import datetime
 
 from app.core.datetime_utils import business_now
+from app.core.license_scope import effective_license_id_for_write, license_scope_for_user
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.configuration import Configuration
 from app.schemas.configuration import ConfigurationPublic, ConfigurationUpdate
+from app.schemas.user import UserPublic
 
 _EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -52,20 +54,25 @@ class ConfigurationService:
             twitter_url=row.twitter_url,
             tiktok_url=row.tiktok_url,
             instagram_url=row.instagram_url,
+            licenseId=row.license_id,
             updated_date=updated_date,
         )
 
-    def _get_or_create_row(self) -> Configuration:
-        row = self.db.get(Configuration, 1)
-        if row is not None:
-            return row
+    def _get_or_create_row(self, user: UserPublic) -> Configuration:
+        scope = license_scope_for_user(user)
+        if scope == 0:
+            raise ConfigurationValidationError("Su cuenta no tiene licencia asignada")
 
-        row = self.db.scalars(select(Configuration).limit(1)).first()
+        stmt = select(Configuration)
+        if scope is None:
+            stmt = stmt.where(Configuration.license_id.is_(None))
+        else:
+            stmt = stmt.where(Configuration.license_id == scope)
+        row = self.db.scalars(stmt.limit(1)).first()
         if row is not None:
             return row
 
         row = Configuration(
-            id=1,
             phone="",
             email="",
             address="",
@@ -73,18 +80,19 @@ class ConfigurationService:
             facebook_url="",
             twitter_url="",
             instagram_url="",
+            license_id=scope,
         )
         self.db.add(row)
         self.db.commit()
         self.db.refresh(row)
         return row
 
-    def get_settings(self) -> ConfigurationPublic:
-        row = self._get_or_create_row()
+    def get_settings(self, user: UserPublic) -> ConfigurationPublic:
+        row = self._get_or_create_row(user)
         return self.to_public(row)
 
-    def update_settings(self, data: ConfigurationUpdate) -> ConfigurationPublic:
-        row = self._get_or_create_row()
+    def update_settings(self, data: ConfigurationUpdate, user: UserPublic) -> ConfigurationPublic:
+        row = self._get_or_create_row(user)
         patch = data.model_dump(exclude_unset=True)
 
         if "email" in patch:
@@ -107,6 +115,15 @@ class ConfigurationService:
                         f"La URL de {_URL_LABELS[key]} no es válida",
                     )
                 setattr(row, key, value)
+
+        scope = license_scope_for_user(user)
+        if data.licenseId is not None or scope is not None:
+            row.license_id = effective_license_id_for_write(
+                self.db,
+                user,
+                data.licenseId,
+                error_factory=ConfigurationValidationError,
+            )
 
         self.db.commit()
         self.db.refresh(row)

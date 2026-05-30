@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import CarTypeServiceDep
+from app.api.deps import CarTypeServiceDep, CurrentUserDep
 from app.schemas.car_type import (
     CarTypeCreate,
     CarTypeDeleteResponse,
@@ -19,8 +19,8 @@ router = APIRouter(prefix="/car-types", tags=["car_types"])
     response_model=CarTypeListResponse,
     responses={401: {"model": ErrorResponse}},
 )
-def list_car_types(service: CarTypeServiceDep) -> CarTypeListResponse:
-    return CarTypeListResponse(items=service.list_all())
+def list_car_types(service: CarTypeServiceDep, current_user: CurrentUserDep) -> CarTypeListResponse:
+    return CarTypeListResponse(items=service.list_all(current_user))
 
 
 @router.post(
@@ -35,9 +35,10 @@ def list_car_types(service: CarTypeServiceDep) -> CarTypeListResponse:
 def create_car_type(
     body: CarTypeCreate,
     service: CarTypeServiceDep,
+    current_user: CurrentUserDep,
 ) -> CarTypeItemResponse:
     try:
-        item = service.create(body)
+        item = service.create(body, current_user)
     except CarTypeValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return CarTypeItemResponse(item=item)
@@ -54,9 +55,10 @@ def create_car_type(
 def get_car_type(
     car_type_id: int,
     service: CarTypeServiceDep,
+    current_user: CurrentUserDep,
 ) -> CarTypeItemResponse:
     try:
-        item = service.get_by_id(car_type_id)
+        item = service.get_by_id(car_type_id, current_user)
     except CarTypeNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -78,9 +80,10 @@ def update_car_type(
     car_type_id: int,
     body: CarTypeUpdate,
     service: CarTypeServiceDep,
+    current_user: CurrentUserDep,
 ) -> CarTypeItemResponse:
     try:
-        item = service.update(car_type_id, body)
+        item = service.update(car_type_id, body, current_user)
     except CarTypeNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -102,9 +105,10 @@ def update_car_type(
 def delete_car_type(
     car_type_id: int,
     service: CarTypeServiceDep,
+    current_user: CurrentUserDep,
 ) -> CarTypeDeleteResponse:
     try:
-        service.delete(car_type_id)
+        service.delete(car_type_id, current_user)
     except CarTypeNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -11,6 +11,7 @@ class RaffleNumber(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     raffle_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ticket_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     number: Mapped[int | None] = mapped_column(Integer, nullable=True)

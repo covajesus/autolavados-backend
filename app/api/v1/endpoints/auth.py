@@ -3,8 +3,14 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.api.deps import CurrentUserDep, UserServiceDep
 from app.core.security import create_access_token
-from app.schemas.auth import LoginRequest, LoginResponse, MeResponse
-from app.services.user_service import AuthFailedError
+from app.schemas.auth import (
+    ChangePasswordRequest,
+    ChangePasswordResponse,
+    LoginRequest,
+    LoginResponse,
+    MeResponse,
+)
+from app.services.user_service import AuthFailedError, LicenseExpiredError, UserValidationError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -13,6 +19,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def login(body: LoginRequest, service: UserServiceDep):
     try:
         user_row = service.authenticate(body.email, body.password)
+    except LicenseExpiredError as exc:
+        return JSONResponse(
+            status_code=403,
+            content={"ok": False, "error": exc.message},
+        )
     except AuthFailedError:
         return JSONResponse(
             status_code=401,
@@ -27,6 +38,26 @@ def login(body: LoginRequest, service: UserServiceDep):
 @router.get("/me", response_model=MeResponse)
 def me(current_user: CurrentUserDep) -> MeResponse:
     return MeResponse(user=current_user)
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+def change_password(
+    body: ChangePasswordRequest,
+    current_user: CurrentUserDep,
+    service: UserServiceDep,
+) -> ChangePasswordResponse:
+    try:
+        user = service.change_own_password(
+            int(current_user.id),
+            body.currentPassword,
+            body.newPassword,
+        )
+    except UserValidationError as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": str(exc)},
+        )
+    return ChangePasswordResponse(user=user)
 
 
 @router.get("/login", response_class=HTMLResponse, include_in_schema=False)

@@ -5,10 +5,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class BrandCreate(BaseModel):
     brand: str = Field(..., min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class BrandUpdate(BaseModel):
     brand: str | None = Field(default=None, min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class BrandRead(BaseModel):
@@ -24,6 +26,7 @@ class BrandRead(BaseModel):
 class BrandPublic(BaseModel):
     id: str
     brand: str
+    licenseId: int | None = Field(default=None, ge=1)
     added_date: str | None = None
     updated_date: str | None = None
     deleted_date: str | None = None

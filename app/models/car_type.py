@@ -10,6 +10,7 @@ class CarType(Base):
     __tablename__ = "car_types"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     car_type: Mapped[str] = mapped_column(String(255), nullable=False)
     icon: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

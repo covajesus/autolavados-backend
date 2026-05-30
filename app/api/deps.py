@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.schemas.user import UserPublic
-from app.services.user_service import UserNotFoundError, UserService
+from app.services.user_service import LicenseExpiredError, UserNotFoundError, UserService
 from app.services.brand_service import BrandService
 from app.services.client_service import ClientService
+from app.services.license_service import LicenseService
 from app.services.branch_office_service import BranchOfficeService
 from app.services.car_type_service import CarTypeService
 from app.services.catalog_service import CatalogService
@@ -37,6 +38,10 @@ def get_brand_service(db: DbSession) -> BrandService:
 
 def get_client_service(db: DbSession) -> ClientService:
     return ClientService(db)
+
+
+def get_license_service(db: DbSession) -> LicenseService:
+    return LicenseService(db)
 
 
 def get_branch_office_service(db: DbSession) -> BranchOfficeService:
@@ -137,7 +142,14 @@ def get_current_user(
             detail="Token inválido",
         ) from exc
     try:
-        return service.get_by_id(user_id)
+        row = service.get_row_by_id(user_id)
+        service.assert_user_license_active(row)
+        return service.to_public(row)
+    except LicenseExpiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=exc.message,
+        ) from exc
     except UserNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -147,6 +159,7 @@ def get_current_user(
 
 BrandServiceDep = Annotated[BrandService, Depends(get_brand_service)]
 ClientServiceDep = Annotated[ClientService, Depends(get_client_service)]
+LicenseServiceDep = Annotated[LicenseService, Depends(get_license_service)]
 BranchOfficeServiceDep = Annotated[BranchOfficeService, Depends(get_branch_office_service)]
 CarTypeServiceDep = Annotated[CarTypeService, Depends(get_car_type_service)]
 StatusServiceDep = Annotated[StatusService, Depends(get_status_service)]

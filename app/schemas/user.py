@@ -11,6 +11,7 @@ class UserCreate(BaseModel):
     email: str | None = None
     password: str | None = Field(default=None, min_length=6, max_length=255)
     role: UserRole = "washer"
+    licenseId: int | None = Field(default=None, ge=1)
     branchOfficeId: int | None = Field(default=None, ge=1)
     weekPercentage: str | None = Field(default=None, max_length=255)
     sundayPercentage: str | None = Field(default=None, max_length=255)
@@ -46,6 +47,7 @@ class UserUpdate(BaseModel):
     email: str | None = None
     password: str | None = Field(default=None, min_length=6, max_length=255)
     role: UserRole | None = None
+    licenseId: int | None = Field(default=None, ge=1)
     branchOfficeId: int | None = Field(default=None, ge=1)
     weekPercentage: str | None = Field(default=None, max_length=255)
     sundayPercentage: str | None = Field(default=None, max_length=255)
@@ -72,6 +74,7 @@ class UserPublic(BaseModel):
     email: str
     role: UserRole
     roleLabel: str
+    licenseId: int | None = Field(default=None, ge=1)
     branchOfficeId: int | None = Field(default=None, ge=1)
     weekPercentage: str | None = None
     sundayPercentage: str | None = None
@@ -79,6 +82,7 @@ class UserPublic(BaseModel):
     dailyGoalPercentage: str | None = None
     statusId: str | None = None
     active: bool
+    mustChangePassword: bool = False
 
 
 class UserListResponse(BaseModel):

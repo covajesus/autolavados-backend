@@ -20,6 +20,7 @@ class ManagerCashClosure(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     manager_id: Mapped[int] = mapped_column(Integer, nullable=False)
     closure_date: Mapped[date] = mapped_column(Date, nullable=False)
     status_id: Mapped[int] = mapped_column(Integer, nullable=False, default=CASH_CLOSURE_STATUS_OPEN)

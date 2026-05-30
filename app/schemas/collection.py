@@ -8,12 +8,14 @@ CollectionCalendarStatus = Literal["ok", "missing", "future"]
 
 class CollectionUpsert(BaseModel):
     gross_amount: int = Field(ge=0)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class CollectionDayResponse(BaseModel):
     branch_office_id: str
     branch_name: str
     collection_date: date
+    licenseId: int | None = Field(default=None, ge=1)
     manual_gross_amount: int = Field(ge=0)
     tickets_ticket_count: int = Field(ge=0)
     tickets_subtotal: int = Field(ge=0)

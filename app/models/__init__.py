@@ -1,5 +1,6 @@
 from app.models.brand import Brand
 from app.models.client import Client
+from app.models.license import License
 from app.models.branch_office import BranchOffice
 from app.models.branch_office_manager import BranchOfficeManager
 from app.models.branch_office_washer import BranchOfficeWasher
@@ -22,6 +23,7 @@ from app.models.washer_pay_settlement import WasherPaySettlement
 __all__ = [
     "Brand",
     "Client",
+    "License",
     "BranchOffice",
     "BranchOfficeManager",
     "BranchOfficeWasher",

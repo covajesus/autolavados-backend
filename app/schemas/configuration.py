@@ -11,6 +11,7 @@ class ConfigurationUpdate(BaseModel):
     twitter_url: str | None = Field(default=None, max_length=255)
     tiktok_url: str | None = Field(default=None, max_length=255)
     instagram_url: str | None = Field(default=None, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class ConfigurationRead(BaseModel):
@@ -34,6 +35,7 @@ class ConfigurationPublic(BaseModel):
     twitter_url: str
     tiktok_url: str
     instagram_url: str
+    licenseId: int | None = Field(default=None, ge=1)
     updated_date: datetime | None = None
 
 

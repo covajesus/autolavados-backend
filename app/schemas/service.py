@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class ServiceCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
+    licenseId: int | None = Field(default=None, ge=1)
     # Compatibilidad con el panel (no persistidos en BD)
     category: str | None = None
     image: str | None = None
@@ -12,6 +13,7 @@ class ServiceCreate(BaseModel):
 class ServiceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
+    licenseId: int | None = Field(default=None, ge=1)
     category: str | None = None
     image: str | None = None
 
@@ -20,6 +22,7 @@ class ServicePublic(BaseModel):
     id: str
     name: str
     description: str = ""
+    licenseId: int | None = Field(default=None, ge=1)
     category: str = ""
     image: str = ""
     added_date: str | None = None

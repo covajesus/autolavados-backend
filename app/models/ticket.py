@@ -11,6 +11,7 @@ class Ticket(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     customer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     car_type_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     license_plate_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     photo_url: Mapped[str | None] = mapped_column(Text, nullable=True)

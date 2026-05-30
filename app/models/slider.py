@@ -10,6 +10,7 @@ class Slider(Base):
     __tablename__ = "sliders"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     slider: Mapped[str] = mapped_column(String(255), nullable=False)
     position: Mapped[str] = mapped_column(String(255), nullable=False)
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

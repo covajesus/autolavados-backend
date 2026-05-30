@@ -3,12 +3,14 @@ from pydantic import BaseModel, Field
 
 class RaffleCreate(BaseModel):
     raffle: str = Field(..., min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
     start_date: str = Field(..., min_length=1)
     end_date: str = Field(..., min_length=1)
 
 
 class RaffleUpdate(BaseModel):
     raffle: str | None = Field(default=None, min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
     start_date: str | None = None
     end_date: str | None = None
 
@@ -16,6 +18,7 @@ class RaffleUpdate(BaseModel):
 class RafflePublic(BaseModel):
     id: str
     raffle: str
+    licenseId: int | None = Field(default=None, ge=1)
     start_date: str | None = None
     end_date: str | None = None
     added_date: str | None = None
@@ -48,6 +51,7 @@ class RaffleAssignmentPublic(BaseModel):
 class RaffleNumberPublic(BaseModel):
     id: str
     raffle_id: str
+    licenseId: int | None = Field(default=None, ge=1)
     customer_id: str | None = None
     ticket_id: str | None = None
     number: int

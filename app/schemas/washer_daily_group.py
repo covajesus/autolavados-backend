@@ -11,6 +11,7 @@ class WasherDailyGroupPublic(BaseModel):
     branch_office_id: str
     group_date: str
     name: str
+    licenseId: int | None = Field(default=None, ge=1)
     members: list[WasherDailyGroupMemberPublic] = Field(default_factory=list)
 
 
@@ -27,6 +28,7 @@ class WasherDailyGroupItemResponse(BaseModel):
 class WasherDailyGroupCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     washer_ids: list[int] = Field(..., min_length=1)
+    licenseId: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def validate_members(self) -> "WasherDailyGroupCreate":
@@ -42,6 +44,7 @@ class WasherDailyGroupCreate(BaseModel):
 class WasherDailyGroupUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     washer_ids: list[int] | None = None
+    licenseId: int | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def validate_members(self) -> "WasherDailyGroupUpdate":

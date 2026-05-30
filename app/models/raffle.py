@@ -11,6 +11,7 @@ class Raffle(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     raffle: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    license_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     end_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     added_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

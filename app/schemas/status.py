@@ -5,10 +5,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class StatusCreate(BaseModel):
     status: str = Field(..., min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class StatusUpdate(BaseModel):
     status: str | None = Field(default=None, min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class StatusRead(BaseModel):
@@ -24,6 +26,7 @@ class StatusRead(BaseModel):
 class StatusPublic(BaseModel):
     id: str
     status: str
+    licenseId: int | None = Field(default=None, ge=1)
     added_date: str | None = None
     updated_date: str | None = None
     deleted_date: str | None = None

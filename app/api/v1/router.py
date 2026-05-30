@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     brands,
     cash_closure,
     clients,
+    licenses,
     car_types,
     configurations,
     customers,
@@ -37,6 +38,7 @@ api_router.include_router(raffles.router)
 api_router.include_router(sliders.router)
 api_router.include_router(brands.router)
 api_router.include_router(clients.router)
+api_router.include_router(licenses.router)
 api_router.include_router(settings.router)
 api_router.include_router(configurations.router)
 api_router.include_router(customers.router)

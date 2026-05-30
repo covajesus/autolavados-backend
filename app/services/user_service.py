@@ -7,6 +7,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.license_scope import (
+    apply_license_scope,
+    assert_row_license,
+    effective_license_id_for_write,
+    license_is_usable,
+    license_scope_for_user,
+)
 from app.core.roles import MANAGER_ROL_ID, WASHER_ROL_ID, role_from_id, role_id_from_role
 from app.core.security import hash_password, verify_password
 from app.core.user_status import (
@@ -15,6 +22,8 @@ from app.core.user_status import (
     status_id_from_active,
 )
 from app.models.rol import Rol
+from app.models.branch_office import BranchOffice
+from app.models.license import License
 from app.models.status import Status
 from app.models.user import User
 from app.schemas.user import UserCreate, UserPublic, UserRole, UserUpdate
@@ -38,6 +47,12 @@ class UserValidationError(Exception):
 
 class AuthFailedError(Exception):
     pass
+
+
+class LicenseExpiredError(Exception):
+    def __init__(self, message: str = "La licencia ha vencido o no está disponible") -> None:
+        self.message = message
+        super().__init__(message)
 
 
 class UserService:
@@ -91,6 +106,7 @@ class UserService:
             email=row.email,
             role=role_from_id(row.rol_id),
             roleLabel=rol_label,
+            licenseId=row.license_id,
             branchOfficeId=branch_office_id,
             weekPercentage=week_percentage,
             sundayPercentage=sunday_percentage,
@@ -98,6 +114,7 @@ class UserService:
             dailyGoalPercentage=daily_goal_percentage,
             statusId=str(row.status_id) if row.status_id is not None else None,
             active=active_from_status_id(row.status_id),
+            mustChangePassword=bool(row.must_change_password),
         )
 
     @staticmethod
@@ -107,6 +124,18 @@ class UserService:
         if branch_office_id_raw < 1:
             raise UserValidationError("La sucursal no es válida")
         return branch_office_id_raw
+
+    def _assert_branch_license(self, branch_office_id: int | None, user: UserPublic) -> None:
+        if branch_office_id is None:
+            return
+        branch = self.db.get(BranchOffice, branch_office_id)
+        if branch is None or not branch.is_active:
+            raise UserValidationError("La sucursal no existe")
+        assert_row_license(
+            branch,
+            license_scope_for_user(user),
+            not_found_exc=UserValidationError,
+        )
 
     def _resolve_status_id(
         self,
@@ -129,6 +158,19 @@ class UserService:
     @staticmethod
     def _can_authenticate(row: User) -> bool:
         return row.deleted_date is None and active_from_status_id(row.status_id)
+
+    def assert_user_license_active(self, row: User) -> None:
+        """Admin plataforma (sin license_id) entra siempre. Resto requiere licencia vigente."""
+        if row.license_id is None or row.license_id < 1:
+            if role_from_id(row.rol_id) == "admin":
+                return
+            raise LicenseExpiredError("Su cuenta no tiene licencia asignada")
+
+        license_row = self.db.get(License, row.license_id)
+        if license_row is None:
+            raise LicenseExpiredError("La licencia no existe")
+        if not license_is_usable(license_row):
+            raise LicenseExpiredError("La licencia ha vencido. Contacte al administrador")
 
     def _active_filter(self, stmt):
         return stmt.where(User.deleted_date.is_(None))
@@ -156,6 +198,7 @@ class UserService:
             full_name="Administrador",
             email=self.normalize_email(settings.default_admin_email),
             password=hash_password(settings.default_admin_password),
+            must_change_password=True,
             added_date=now,
             updated_date=now,
             deleted_date=None,
@@ -172,32 +215,40 @@ class UserService:
             raise AuthFailedError()
         if not self._can_authenticate(row):
             raise AuthFailedError()
+        self.assert_user_license_active(row)
         return row
 
-    def list_all(self) -> list[UserPublic]:
+    def list_all(self, current_user: UserPublic) -> list[UserPublic]:
         rol_labels = self._rol_labels_by_id()
         stmt = self._active_filter(select(User)).order_by(User.full_name)
+        stmt = apply_license_scope(stmt, User, license_scope_for_user(current_user))
         return [
             self.to_public(row, rol_label=rol_labels.get(row.rol_id))
             for row in self.db.scalars(stmt).all()
         ]
 
-    def list_by_rol_id(self, rol_id: int) -> list[UserPublic]:
+    def list_by_rol_id(self, rol_id: int, current_user: UserPublic) -> list[UserPublic]:
         rol_labels = self._rol_labels_by_id()
         stmt = (
             self._active_filter(select(User))
             .where(User.rol_id == rol_id)
             .order_by(User.full_name)
         )
+        stmt = apply_license_scope(stmt, User, license_scope_for_user(current_user))
         return [
             self.to_public(row, rol_label=rol_labels.get(row.rol_id))
             for row in self.db.scalars(stmt).all()
             if self._can_authenticate(row)
         ]
 
-    def list_washers_by_branch_office(self, branch_office_id: int) -> list[UserPublic]:
+    def list_washers_by_branch_office(
+        self,
+        branch_office_id: int,
+        current_user: UserPublic,
+    ) -> list[UserPublic]:
         if branch_office_id < 1:
             return []
+        self._assert_branch_license(branch_office_id, current_user)
         rol_labels = self._rol_labels_by_id()
         washer_ids = self._branch_washer.list_washer_ids_for_branch(branch_office_id)
         if not washer_ids:
@@ -207,16 +258,19 @@ class UserService:
             .where(User.id.in_(washer_ids), User.rol_id == WASHER_ROL_ID)
             .order_by(User.full_name)
         )
+        stmt = apply_license_scope(stmt, User, license_scope_for_user(current_user))
         return [
             self.to_public(row, rol_label=rol_labels.get(row.rol_id))
             for row in self.db.scalars(stmt).all()
             if self._can_authenticate(row)
         ]
 
-    def get_by_id(self, user_id: int) -> UserPublic:
+    def get_by_id(self, user_id: int, current_user: UserPublic | None = None) -> UserPublic:
         row = self.db.get(User, user_id)
         if row is None or not row.is_active:
             raise UserNotFoundError()
+        if current_user is not None:
+            assert_row_license(row, license_scope_for_user(current_user), not_found_exc=UserNotFoundError)
         return self.to_public(row)
 
     def get_row_by_id(self, user_id: int) -> User:
@@ -225,7 +279,7 @@ class UserService:
             raise UserNotFoundError()
         return row
 
-    def create(self, data: UserCreate) -> UserPublic:
+    def create(self, data: UserCreate, current_user: UserPublic) -> UserPublic:
         full_name = data.fullName.strip()
         if not full_name:
             raise UserValidationError("El nombre completo es obligatorio")
@@ -248,14 +302,22 @@ class UserService:
             active=data.active,
             status_id_raw=data.statusId,
         )
+        license_id = effective_license_id_for_write(
+            self.db,
+            current_user,
+            data.licenseId,
+            error_factory=UserValidationError,
+        )
 
         now = self._now()
         row = User(
             rol_id=rol_id,
+            license_id=license_id,
             status_id=status_id,
             full_name=full_name,
             email=email,
             password=stored_password,
+            must_change_password=True,
             added_date=now,
             updated_date=now,
             deleted_date=None,
@@ -270,6 +332,7 @@ class UserService:
                 branch_office_id = self._parse_branch_office_id(data.branchOfficeId)
                 if branch_office_id is None:
                     raise UserValidationError("Seleccione una sucursal para el lavador")
+                self._assert_branch_license(branch_office_id, current_user)
                 self._branch_washer.assign_washer_to_branch(
                     row.id,
                     branch_office_id,
@@ -283,6 +346,7 @@ class UserService:
                 branch_office_id = self._parse_branch_office_id(data.branchOfficeId)
                 if branch_office_id is None:
                     raise UserValidationError("Seleccione una sucursal para el gerente")
+                self._assert_branch_license(branch_office_id, current_user)
                 self._branch_manager.assign_manager_to_branch(
                     row.id,
                     branch_office_id,
@@ -299,10 +363,12 @@ class UserService:
             self.db.rollback()
             raise
 
-    def update(self, user_id: int, data: UserUpdate) -> UserPublic:
+    def update(self, user_id: int, data: UserUpdate, current_user: UserPublic) -> UserPublic:
         row = self.db.get(User, user_id)
         if row is None:
             raise UserNotFoundError()
+        scope = license_scope_for_user(current_user)
+        assert_row_license(row, scope, not_found_exc=UserNotFoundError)
 
         if data.fullName is not None:
             name = data.fullName.strip()
@@ -313,10 +379,19 @@ class UserService:
         if data.email is not None:
             row.email = self._resolve_email(data.email)
 
+        if data.licenseId is not None or scope is not None:
+            row.license_id = effective_license_id_for_write(
+                self.db,
+                current_user,
+                data.licenseId,
+                error_factory=UserValidationError,
+            )
+
         if data.password is not None and data.password:
             if len(data.password) < 6:
                 raise UserValidationError("La contraseña debe tener al menos 6 caracteres")
             row.password = hash_password(data.password)
+            row.must_change_password = True
 
         new_rol_id = row.rol_id
         if data.role is not None:
@@ -336,6 +411,7 @@ class UserService:
             if new_rol_id == WASHER_ROL_ID and data.branchOfficeId is not None:
                 branch_office_id = self._parse_branch_office_id(data.branchOfficeId)
                 if branch_office_id is not None:
+                    self._assert_branch_license(branch_office_id, current_user)
                     self._branch_manager.soft_delete_for_manager(user_id, commit=False)
                     self._branch_washer.assign_washer_to_branch(
                         user_id,
@@ -367,6 +443,7 @@ class UserService:
             elif new_rol_id == MANAGER_ROL_ID and data.branchOfficeId is not None:
                 branch_office_id = self._parse_branch_office_id(data.branchOfficeId)
                 if branch_office_id is not None:
+                    self._assert_branch_license(branch_office_id, current_user)
                     self._branch_washer.soft_delete_for_washer(user_id, commit=False)
                     self._branch_manager.assign_manager_to_branch(
                         user_id,
@@ -390,10 +467,31 @@ class UserService:
             self.db.rollback()
             raise
 
-    def delete(self, user_id: int) -> None:
+    def change_own_password(
+        self,
+        user_id: int,
+        current_password: str,
+        new_password: str,
+    ) -> UserPublic:
+        row = self.get_row_by_id(user_id)
+        if not verify_password(current_password, row.password):
+            raise UserValidationError("La contraseña actual no es correcta")
+        if len(new_password) < 6:
+            raise UserValidationError("La nueva contraseña debe tener al menos 6 caracteres")
+        if verify_password(new_password, row.password):
+            raise UserValidationError("La nueva contraseña debe ser distinta a la actual")
+        row.password = hash_password(new_password)
+        row.must_change_password = False
+        row.updated_date = self._now()
+        self.db.commit()
+        self.db.refresh(row)
+        return self.to_public(row)
+
+    def delete(self, user_id: int, current_user: UserPublic) -> None:
         row = self.db.get(User, user_id)
         if row is None or not row.is_active:
             raise UserNotFoundError()
+        assert_row_license(row, license_scope_for_user(current_user), not_found_exc=UserNotFoundError)
         now = self._now()
         self._branch_washer.soft_delete_for_washer(user_id, commit=False)
         self._branch_manager.soft_delete_for_manager(user_id, commit=False)

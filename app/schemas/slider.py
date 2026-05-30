@@ -6,11 +6,13 @@ from pydantic import BaseModel, ConfigDict, Field
 class SliderCreate(BaseModel):
     slider: str = Field(..., min_length=1, max_length=255)
     position: str = Field(..., min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class SliderUpdate(BaseModel):
     slider: str | None = Field(default=None, min_length=1, max_length=255)
     position: str | None = Field(default=None, min_length=1, max_length=255)
+    licenseId: int | None = Field(default=None, ge=1)
 
 
 class SliderRead(BaseModel):
@@ -28,6 +30,7 @@ class SliderPublic(BaseModel):
     id: str
     slider: str
     position: str
+    licenseId: int | None = Field(default=None, ge=1)
     added_date: datetime | None = None
     updated_date: datetime | None = None
     deleted_date: datetime | None = None

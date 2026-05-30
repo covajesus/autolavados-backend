@@ -101,7 +101,7 @@ def create_ticket(
     current_user: CurrentUserDep,
 ) -> TicketCreateResponse:
     try:
-        return service.create(body)
+        return service.create(body, current_user)
     except TicketValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -14,12 +14,14 @@ class BranchOfficeBase(BaseModel):
 class BranchOfficeCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     active: bool = True
+    licenseId: int | None = Field(default=None, ge=1)
     managementTypeId: ManagementTypeId = Field(..., description="1=Administrada, 2=Subarriendo")
 
 
 class BranchOfficeUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     active: bool | None = None
+    licenseId: int | None = Field(default=None, ge=1)
     managementTypeId: ManagementTypeId | None = None
 
 
@@ -41,6 +43,7 @@ class BranchOfficePublic(BaseModel):
     id: str
     name: str
     active: bool
+    licenseId: int | None = Field(default=None, ge=1)
     managementTypeId: int = 1
 
 
